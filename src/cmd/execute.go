@@ -14,19 +14,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const emulator string = "localhost:9023"
-
-// This serves development process. It should not be called in prod
-func setEmulator() {
-	// Set STORAGE_EMULATOR_HOST environment variable.
-	err := os.Setenv("STORAGE_EMULATOR_HOST", emulator)
-	if err != nil {
-		// TODO: Handle error.
-		logger.ErrorLogger.Fatalln(err)
-	}
-	logger.InfoLogger.Println("Setting and Using Emulator", emulator)
-}
-
 // Create bucket
 func createBucket(cmd *cobra.Command, args []string) {
 	logger.Initialize(logLevel)
@@ -34,12 +21,15 @@ func createBucket(cmd *cobra.Command, args []string) {
 	if bucketName == "" {
 		logger.ErrorLogger.Fatalln("Specify a bucket name")
 	}
+
+	if projectID == "" {
+		logger.ErrorLogger.Fatalln("Specify a Project ID")
+	}
+
 	ctx := context.Background()
 
-	// Create client as usual.
-	client, err := storage.NewClient(ctx)
+	client, err := utils.OpenClient(ctx, authType, authHolder)
 	if err != nil {
-		// TODO: Handle error.
 		logger.ErrorLogger.Fatalln(err)
 	}
 	defer client.Close()
@@ -63,14 +53,13 @@ func deleteBucket(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
 	// Create client as usual.
-	client, err := storage.NewClient(ctx)
+	client, err := utils.OpenClient(ctx, authType, authHolder)
 	if err != nil {
-		// TODO: Handle error.
 		logger.ErrorLogger.Fatalln(err)
 	}
 	defer client.Close()
 
-	if err = client.Bucket(bucketName).Delete(ctx); err != nil {
+	if err := client.Bucket(bucketName).Delete(ctx); err != nil {
 		logger.ErrorLogger.Fatalln(err)
 	}
 
@@ -87,9 +76,8 @@ func bucketExists(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
 	// Create client as usual.
-	client, err := storage.NewClient(ctx)
+	client, err := utils.OpenClient(ctx, authType, authHolder)
 	if err != nil {
-		// TODO: Handle error.
 		logger.ErrorLogger.Fatalln(err)
 	}
 	defer client.Close()
@@ -115,9 +103,8 @@ func attrsBucket(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
 	// Create client as usual.
-	client, err := storage.NewClient(ctx)
+	client, err := utils.OpenClient(ctx, authType, authHolder)
 	if err != nil {
-		// TODO: Handle error.
 		logger.ErrorLogger.Fatalln(err)
 	}
 	defer client.Close()
@@ -156,12 +143,11 @@ func loadFile(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
 	// Create client as usual.
-	client, err := storage.NewClient(ctx)
-	defer client.Close()
+	client, err := utils.OpenClient(ctx, authType, authHolder)
 	if err != nil {
-		// TODO: Handle error.
 		logger.ErrorLogger.Fatalln(err)
 	}
+	defer client.Close()
 
 	// Creating blob
 	obj := client.Bucket(bucketName).Object(blobPath)
@@ -179,7 +165,7 @@ func loadFile(cmd *cobra.Command, args []string) {
 }
 
 // Load files that match prefix
-func loadPrefix(cmd *cobra.Command, args []string) {
+func loadBatches(cmd *cobra.Command, args []string) {
 	logger.Initialize(logLevel)
 
 	ctx := context.Background()
@@ -194,6 +180,7 @@ func loadPrefix(cmd *cobra.Command, args []string) {
 		logger.ErrorLogger.Fatalln("Specify a search path")
 	}
 
+	logger.InfoLogger.Println("Init batch collector")
 	// Initializing a Error Collector
 	bc := utils.BatchCollector{}
 
@@ -202,10 +189,9 @@ func loadPrefix(cmd *cobra.Command, args []string) {
 	var pipe chan string = make(chan string)
 
 	// Create client as usual.
-	client, err := storage.NewClient(ctx)
+	client, err := utils.OpenClient(ctx, authType, authHolder)
 	if err != nil {
-		// TODO: Handle error.
-		logger.ErrorLogger.Println(err)
+		logger.ErrorLogger.Fatalln(err)
 	}
 	defer client.Close()
 
@@ -222,7 +208,6 @@ func loadPrefix(cmd *cobra.Command, args []string) {
 	if err != nil {
 		logger.ErrorLogger.Fatalln(err)
 	}
-
 	// Closing pipe
 	close(pipe)
 
@@ -231,9 +216,16 @@ func loadPrefix(cmd *cobra.Command, args []string) {
 	// Wait until channel is drainned and all workers are done
 	wg.Wait()
 
+	// Printing percentual of errors at the end
 	amountErrors := len(bc.FilesNotProcessed)
 	perc := float32(amountErrors) / float32(total) * 100
 	logger.InfoLogger.Printf("Done loading %d files (%.2f %%) - total %d\n", total-amountErrors, perc, total)
+
+	if errorFileTracker {
+		if err := bc.DumpNotProcessedList(errorFileTrackerPath); err != nil {
+			logger.ErrorLogger.Fatalln(err)
+		}
+	}
 }
 
 // dispatcher function

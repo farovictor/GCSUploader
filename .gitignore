@@ -1,4 +1,5 @@
 **/data
-**/cloudstorage
 **/bin
 *.json
+**.env
+*.log

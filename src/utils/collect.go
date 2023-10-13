@@ -1,7 +1,8 @@
-package fs
+package utils
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,27 @@ func (b *BatchCollector) AddError(file string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.FilesNotProcessed = append(b.FilesNotProcessed, file)
+}
+
+// Dump the list
+func (b *BatchCollector) DumpNotProcessedList(path string) error {
+	if len(b.FilesNotProcessed) > 0 {
+		filePath := fmt.Sprintf("%s/errors.log", path)
+
+		content := strings.Join(b.FilesNotProcessed, "\n")
+
+		err := ioutil.WriteFile(filePath, []byte(content), 0644)
+
+		if err == nil {
+			logger.InfoLogger.Println("List of not processed files is available in:", filePath)
+		}
+		return err
+	}
+
+	logger.InfoLogger.Println("No files presented error")
+
+	return nil
+
 }
 
 // Emits filtered files to a channel
